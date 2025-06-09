@@ -1,0 +1,13 @@
+{
+    "files.exclude": {
+        "**/*.d": true,
+        "**/*.o": true,
+        "**/*.sym": true
+    },
+    "files.associations": {
+        "user.h": "c",
+        "stat.h": "c",
+        "types.h": "c"
+    },
+    "editor.tabSize": 2
+}
