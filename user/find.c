@@ -38,7 +38,7 @@ find(char *path, char *name) {
   case T_DEVICE:
   case T_FILE:
     if(strcmp(filename(path), name) == 0) {
-      printf("%s%s\n", path, name);
+      printf("%s\n", path);
     }
     break;
 
