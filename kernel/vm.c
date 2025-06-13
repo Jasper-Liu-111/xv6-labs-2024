@@ -489,8 +489,31 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 
 #ifdef LAB_PGTBL
 void
+walkprint(pagetable_t pagetable, int level, uint64 va) {
+  if (level > 2) {
+    panic("walkprint: level too high");
+  }
+  for(int i = 0; i < 512; i++) {
+    pte_t pte = pagetable[i];
+    if(pte & PTE_V) {
+      printf("..");
+      for (int j = 0; j < level; j++) {
+        printf(" ..");
+      }
+      uint64 child = PTE2PA(pte);
+      va |= (((uint64)i & PXMASK) << PXSHIFT(2 - level));
+      printf("%p: pte %p pa %p\n", (void*)va, (void*)pte, (void*)child);
+      // this PTE points to a lower-level page table.
+      if (!PTE_LEAF(pte)) {
+        walkprint((pagetable_t)child, level + 1, va);
+      }
+    }
+  }
+}
+void
 vmprint(pagetable_t pagetable) {
-  // your code here
+  printf("page table %p\n", pagetable);
+  walkprint(pagetable, 0, 0);
 }
 #endif
 
