@@ -251,6 +251,12 @@ userinit(void)
 
   p->state = RUNNABLE;
 
+  p->siginterval = 0;
+  p->sighandler = 0;
+  p->sigticks = 0;
+  p->sigbusy = 0;
+  memset(&p->sigstate, 0, sizeof(p->sigstate));
+
   release(&p->lock);
 }
 

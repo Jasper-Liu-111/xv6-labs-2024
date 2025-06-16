@@ -92,3 +92,30 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+uint64
+sys_sigalarm(void)
+{
+  int n;
+  uint64 p;
+
+  argint(0, &n);
+  argaddr(1, &p);
+
+  myproc()->siginterval = n;
+  myproc()->sighandler = p;
+
+  return 0;
+}
+
+uint64
+sys_sigreturn(void)
+{
+  struct proc *p = myproc();
+  if (!p->sigbusy) {
+    panic("sys_sigreturn: sigbusy not set");
+  }
+  p->sigreturn = 1;
+  p->sigbusy = 0;
+  return 0;
+}

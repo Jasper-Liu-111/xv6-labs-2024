@@ -65,8 +65,87 @@ usertrap(void)
     intr_on();
 
     syscall();
+    if (p->sigreturn) {
+      // If sigreturn has been called, restore the saved user state.
+      p->trapframe->epc = p->sigstate.epc;
+      p->trapframe->ra = p->sigstate.ra;
+      p->trapframe->sp = p->sigstate.sp;
+      p->trapframe->gp = p->sigstate.gp;
+      p->trapframe->tp = p->sigstate.tp;
+      p->trapframe->t0 = p->sigstate.t0;
+      p->trapframe->t1 = p->sigstate.t1;
+      p->trapframe->t2 = p->sigstate.t2;
+      p->trapframe->s0 = p->sigstate.s0;
+      p->trapframe->s1 = p->sigstate.s1;
+      p->trapframe->a0 = p->sigstate.a0;
+      p->trapframe->a1 = p->sigstate.a1;
+      p->trapframe->a2 = p->sigstate.a2;
+      p->trapframe->a3 = p->sigstate.a3;
+      p->trapframe->a4 = p->sigstate.a4;
+      p->trapframe->a5 = p->sigstate.a5;
+      p->trapframe->a6 = p->sigstate.a6;
+      p->trapframe->a7 = p->sigstate.a7;
+      p->trapframe->s2 = p->sigstate.s2;
+      p->trapframe->s3 = p->sigstate.s3;
+      p->trapframe->s4 = p->sigstate.s4;
+      p->trapframe->s5 = p->sigstate.s5;
+      p->trapframe->s6 = p->sigstate.s6;
+      p->trapframe->s7 = p->sigstate.s7;
+      p->trapframe->s8 = p->sigstate.s8;
+      p->trapframe->s9 = p->sigstate.s9;
+      p->trapframe->s10 = p->sigstate.s10;
+      p->trapframe->s11 = p->sigstate.s11;
+      p->trapframe->t3 = p->sigstate.t3;
+      p->trapframe->t4 = p->sigstate.t4;
+      p->trapframe->t5 = p->sigstate.t5;
+      p->trapframe->t6 = p->sigstate.t6;
+      p->sigreturn = 0;
+    }
   } else if((which_dev = devintr()) != 0){
     // ok
+    if (which_dev == 2) {
+      if (p->siginterval != 0 && p->sigbusy == 0) {
+        p->sigticks++;
+        if (p->sigticks >= p->siginterval) {
+          p->sigticks = 0;
+          p->sigbusy = 1;
+          // Save the user state before handling the signal.
+          p->sigstate.epc = p->trapframe->epc;
+          p->sigstate.ra = p->trapframe->ra;
+          p->sigstate.sp = p->trapframe->sp;
+          p->sigstate.gp = p->trapframe->gp;
+          p->sigstate.tp = p->trapframe->tp;
+          p->sigstate.t0 = p->trapframe->t0;
+          p->sigstate.t1 = p->trapframe->t1;
+          p->sigstate.t2 = p->trapframe->t2;
+          p->sigstate.s0 = p->trapframe->s0;
+          p->sigstate.s1 = p->trapframe->s1;  
+          p->sigstate.a0 = p->trapframe->a0;
+          p->sigstate.a1 = p->trapframe->a1;
+          p->sigstate.a2 = p->trapframe->a2;
+          p->sigstate.a3 = p->trapframe->a3;
+          p->sigstate.a4 = p->trapframe->a4;
+          p->sigstate.a5 = p->trapframe->a5;
+          p->sigstate.a6 = p->trapframe->a6;
+          p->sigstate.a7 = p->trapframe->a7;
+          p->sigstate.s2 = p->trapframe->s2;
+          p->sigstate.s3 = p->trapframe->s3;
+          p->sigstate.s4 = p->trapframe->s4;
+          p->sigstate.s5 = p->trapframe->s5;
+          p->sigstate.s6 = p->trapframe->s6;
+          p->sigstate.s7 = p->trapframe->s7;
+          p->sigstate.s8 = p->trapframe->s8;
+          p->sigstate.s9 = p->trapframe->s9;
+          p->sigstate.s10 = p->trapframe->s10;
+          p->sigstate.s11 = p->trapframe->s11;
+          p->sigstate.t3 = p->trapframe->t3;
+          p->sigstate.t4 = p->trapframe->t4;
+          p->sigstate.t5 = p->trapframe->t5;
+          p->sigstate.t6 = p->trapframe->t6;
+          p->trapframe->epc = p->sighandler;
+        }
+      }
+    }
   } else {
     printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
     printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
