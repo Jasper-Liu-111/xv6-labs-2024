@@ -19,6 +19,37 @@ static uint8 host_mac[ETHADDR_LEN] = { 0x52, 0x55, 0x0a, 0x00, 0x02, 0x02 };
 
 static struct spinlock netlock;
 
+struct udp_packet {
+  char *buf;
+  char *payload; // pointer to the UDP payload
+  int len;
+  uint16 sport;
+  uint32 src;
+};
+
+struct recv_queue {
+  struct udp_packet packets[16]; // queue of received packets
+  struct spinlock lock;
+  int head;
+  int tail;
+};
+
+int ports_bound[65536];
+
+struct recv_queue recv_queues[65536]; // one for each port
+
+void recv_queue_init(struct recv_queue *queue)
+{
+  initlock(&queue->lock, "recv_queue_lock");
+  queue->head = 0;
+  queue->tail = 0;
+  for (int i = 0; i < 16; i++) {
+    queue->packets[i].buf = 0;
+    queue->packets[i].payload = 0;
+    queue->packets[i].len = 0;
+  }
+}
+
 void
 netinit(void)
 {
@@ -34,11 +65,19 @@ netinit(void)
 uint64
 sys_bind(void)
 {
-  //
-  // Your code here.
-  //
+  int input;
+  uint16 port;
+  argint(0, &input);
+  port = (uint16)input;
 
-  return -1;
+  if (ports_bound[port] != 0) {
+    // Already bound to this port.
+    return -1;
+  }
+  struct recv_queue *queue = &recv_queues[port];
+  recv_queue_init(queue);
+  ports_bound[port] = 1;
+  return 0;
 }
 
 //
@@ -74,10 +113,61 @@ sys_unbind(void)
 uint64
 sys_recv(void)
 {
-  //
-  // Your code here.
-  //
-  return -1;
+  struct proc *p = myproc();
+  int dport;
+  uint64 src;
+  uint64 sport;
+  uint64 buf;
+  int maxlen;
+
+  argint(0, &dport);
+  argaddr(1, &src);
+  argaddr(2, &sport);
+  argaddr(3, &buf);
+  argint(4, &maxlen);
+
+  if (ports_bound[(uint16)dport] == 0) {
+    // Not bound to this port.
+    return -1;
+  }
+  struct recv_queue *queue = &recv_queues[(uint16)dport];
+  acquire(&queue->lock);
+  while(queue->head == queue->tail){
+    if(killed(myproc())){
+      release(&queue->lock);
+      return -1;
+    }
+    sleep(queue, &queue->lock);
+  }
+  // dequeue the packet
+  struct udp_packet *packet = &queue->packets[queue->head];
+  queue->head = (queue->head + 1) % 16;
+  if (packet->len > maxlen) {
+    // too long, truncate
+    packet->len = maxlen;
+  }
+  if (copyout(p->pagetable, buf, packet->payload, packet->len) < 0) {
+    kfree(packet->buf);
+    release(&queue->lock);
+    return -1;
+  }
+  if (copyout(p->pagetable, src, (char *)&packet->src, sizeof(packet->src)) < 0) {
+    kfree(packet->buf);
+    release(&queue->lock);
+    return -1;
+  }
+  if (copyout(p->pagetable, sport, (char *)&packet->sport, sizeof(packet->sport)) < 0) {
+    kfree(packet->buf);
+    release(&queue->lock);
+    return -1;
+  }
+  uint64 bytes_copied = packet->len;
+  kfree(packet->buf);
+  packet->buf = 0;
+  packet->payload = 0;
+  packet->len = 0;
+  release(&queue->lock);
+  return bytes_copied;
 }
 
 // This code is lifted from FreeBSD's ping.c, and is copyright by the Regents
@@ -188,10 +278,37 @@ ip_rx(char *buf, int len)
     printf("ip_rx: received an IP packet\n");
   seen_ip = 1;
 
-  //
-  // Your code here.
-  //
-  
+  struct eth *eth = (struct eth *) buf;
+  struct ip *ip = (struct ip *) (eth + 1);
+  if (ip->ip_p != IPPROTO_UDP || ip->ip_dst != htonl(local_ip) || len < sizeof(struct eth) + sizeof(struct ip) + sizeof(struct udp)) {
+    kfree(buf);
+    return;
+  }
+
+  struct udp *udp = (struct udp *)(ip + 1);
+  uint16 dport = ntohs(udp->dport);
+  if (ports_bound[dport] == 0) {
+    kfree(buf);
+    return;
+  }
+  struct recv_queue *queue = &recv_queues[dport];
+  acquire(&queue->lock);
+  // push to the queue
+  if (queue->head == (queue->tail + 1) % 16) {
+    // queue is full, drop the packet
+    kfree(buf);
+    release(&queue->lock);
+    return;
+  }
+  queue->packets[queue->tail].buf = buf;
+  queue->packets[queue->tail].payload = (char *)(udp + 1);
+  queue->packets[queue->tail].len = htons(udp->ulen) - sizeof(struct udp);
+  queue->packets[queue->tail].sport = ntohs(udp->sport);
+  queue->packets[queue->tail].src = ntohl(ip->ip_src);
+  queue->tail = (queue->tail + 1) % 16;
+  wakeup(queue);
+  release(&queue->lock);
+  return;
 }
 
 //
